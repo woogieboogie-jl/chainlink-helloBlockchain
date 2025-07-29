@@ -85,68 +85,113 @@ This version is more advanced. It imports libraries from OpenZeppelin and Chainl
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Import the official Chainlink Price Feed interface.
-import {AggregatorV3Interface} from "@chainlink/contracts/v0.8/interfaces/AggregatorV3Interface.sol";
-// Import OpenZeppelin's library to convert numbers to strings.
+// This is an "interface". Think of it as a blueprint or a set of rules that
+// defines how to interact with Chainlink Price Feed contracts. It tells our
+// contract what functions are available, like `latestRoundData()`.
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+
+// This is a "library". It gives us extra tools that Solidity doesn't have
+// by default. The `Strings` library provides a tool (`toString`) to convert
+// numbers into text (a string), which is needed for string concatenation.
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
- * @title HelloBlockchainPrice
- * @notice An advanced contract that uses a name to fetch its corresponding asset price.
+ * @title HelloBlockchainWithPrice
+ * @notice A contract that uses a name to fetch its corresponding asset price.
  */
-contract HelloBlockchainPrice {
-    // Attach the library's functions to the `int256` type.
-    using Strings for int256;
+contract HelloBlockchainWithPrice {
+    // This line "attaches" the tools from the `Strings` library to the `uint256`
+    // number type. This lets us call functions like `myNumber.toString()`.
+    using Strings for uint256;
 
-    // --- State Variables ---
+    // A variable to store the currently active price feed contract we want to talk to.
     AggregatorV3Interface internal priceFeed;
+    
+    // A variable to store the name the user sets. 'public' automatically creates
+    // a "getter" function so anyone can read its value from outside the contract.
     string public blockchainName;
+
+    // This is a "mapping". Think of it like a dictionary or a phonebook.
+    // It lets us look up a price feed's on-chain address (the value)
+    // using a simple text name like "Avalanche" (the key).
     mapping(string => address) public priceFeedRegistry;
 
-    // --- Constructor ---
+    /**
+     * @notice The constructor is a special function that runs only ONCE,
+     * when the contract is first deployed.
+     */
     constructor() {
-        // Pre-populates the registry with official price feed addresses for Avalanche Fuji.
-        priceFeedRegistry["Avalanche"] = 0x5498BB86BC934c8D34FDA08E81D444153d0D06aD; // AVAX/USD
-        priceFeedRegistry["Chainlink"] = 0x34C4c526902d88a3Aa98DB8a9b802603EB1E3470;  // LINK/USD
+        // Here, we pre-fill our 'phonebook' with the known addresses for the
+        // AVAX/USD and LINK/USD price feeds on the Avalanche Fuji testnet.
+        priceFeedRegistry["Avalanche"] = 0x5498BB86BC934c8D34FDA08E81D444153d0D06aD;
+        priceFeedRegistry["Chainlink"] = 0x34C4c526902d88a3Aa98DB8a9b802603EB1E3470;
     }
-
-    // --- Functions ---
 
     /**
      * @notice Sets the blockchain name and the active price feed for this contract.
      * @param _blockchainName The name of the feed to activate (e.g., "Avalanche").
+     *
+     * @dev external vs public:
+     * `external`: Can ONLY be called from outside this contract. It's more gas-efficient.
+     * `public`: Can be called from outside OR by other functions inside this contract.
+     * We use `external` here because we don't need to call it internally, saving gas.
+     *
+     * @dev calldata vs memory:
+     * `calldata`: A special, read-only data location for function arguments. It's the
+     * cheapest place to store input, so we use it to save gas.
+     * `memory`: A temporary place to store data that can be changed. More expensive.
+     * We use `calldata` for `_blockchainName` because we only need to read it.
      */
     function setBlockchainName(string calldata _blockchainName) external {
+        // First, we save the provided name into our `blockchainName` state variable.
         blockchainName = _blockchainName;
         
-        address feedAddress = priceFeedRegistry[_blockchainName];
+        // Next, we use the name as a key to look up its address in our registry mapping.
+        address feedAddress = priceFeedRegistry[blockchainName];
+
+        // This is a safety check. If the name wasn't in our registry, the address
+        // would be empty (0x0...). This `require` statement stops the function
+        // if a valid address wasn't found, returning an error message.
         require(feedAddress != address(0), "Price feed not found for this name");
         
-        // Set the active priceFeed state variable.
+        // Finally, we tell our `priceFeed` variable to point to the contract
+        // at the address we just found, making it the 'active' feed.
         priceFeed = AggregatorV3Interface(feedAddress);
     }
 
     /**
      * @notice Returns a greeting with the latest price from the active feed.
+     * @dev `view` means this function only reads data from the blockchain; it
+     * does not change any state. This allows it to be called for free from off-chain.
+     * `returns (string memory)` means it promises to give back a string.
      */
-    function sayHelloWithPrice() external view returns (string memory) {
-        require(address(priceFeed) != address(0), "No price feed has been set");
+    function sayHelloWithPrice() external view returns (string memory) {        
+        // This is the main call to the Chainlink oracle contract.
+        // `latestRoundData()` returns several values about the latest price update.
+        // We only care about the second value, which is the price.
+        (
+            /* uint80 roundID */, 
+            int256 price, // We declare a variable `price` to store the second return value.
+            /* uint256 startedAt */,
+            /* uint256 timeStamp */,
+            /* uint80 answeredInRound */
+        ) = priceFeed.latestRoundData(); // The other returns are ignored with blank commas.
+        
+        // Chainlink prices are returned as large integers with no decimal point.
+        // For example, a price of $35.12 is returned as 3512000000.
+        // The `decimals()` function tells us how many decimal places there are (usually 8).
+        // To get a human-readable number, we divide by 10 to the power of `decimals`.
+        uint256 readablePrice = uint256(price) / (10**priceFeed.decimals());
 
-        // Get the latest price data from the active feed.
-        ( , int256 price, , , ) = priceFeed.latestRoundData();
-        
-        // Get the number of decimals for the feed (usually 8 for crypto/USD).
-        uint8 decimals = priceFeed.decimals();
-        
-        // Correctly calculate the human-readable price.
-        int256 readablePrice = price / int256(10**decimals);
-        
-        // Convert the integer price to a string and concatenate.
+        // Here, we build the final output string. We use the `.toString()` function
+        // (which we attached from the `Strings` library) to convert our `readablePrice`
+        // number into text first, because Solidity cannot directly combine text and numbers.
         return string.concat(
-            "Hello ", 
+            "Hello! ", 
             blockchainName, 
             "'s Price is: $", 
-            readablePrice.toString()
+            readablePrice.toString(),
+            "!"
         );
     }
 }
