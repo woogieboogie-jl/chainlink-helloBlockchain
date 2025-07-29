@@ -1,6 +1,3 @@
-Of course. Here is a complete README-style guide based on your request. It walks through deploying the basic `HelloBlockchain.sol` contract and then upgrading it to the `HelloBlockchainPrice.sol` version that integrates with Chainlink Data Feeds.
-
------
 
 # Hello Blockchain: From Basic Contract to Chainlink Price Feeds
 
