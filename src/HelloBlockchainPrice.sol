@@ -5,7 +5,7 @@ import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/Ag
 // for string concatenation
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-contract HelloBlockchainWithPrice {
+contract HelloBlockchainPrice {
     using Strings for uint256;
     AggregatorV3Interface internal priceFeed;
     string public blockchainName;
